@@ -92,7 +92,7 @@ import {
   web3Config,
 } from "../../utils/web3";
 
-import { Connection } from "@solana/web3.js";
+import { Connection, SignatureResult, Context } from "@solana/web3.js";
 
 const RAY = getTokenBySymbol("RAY");
 
@@ -104,6 +104,10 @@ function Swap() {
   let usedAmmId: any;
   let usedRouteInfo: any;
   let endpoint = "";
+  let showMarket = "" as string;
+  let side = null as "buy" | "sell" | null;
+  let worstPrice = null as number | null;
+  let toCoinWithSlippage = null as any;
   // serum
   const market = {} as {
     [marketAddress: string]: {
@@ -214,7 +218,6 @@ function Swap() {
 
     tokenList.forEach((v: any) => {
       userBalance.find((x: any) => {
-        console.log(v, "v");
         if (v.mintAddress === x.account.data.parsed.info.mint) {
           tokenList.push(
             Object.assign(v, {
@@ -862,7 +865,6 @@ function Swap() {
   const updateAmounts = () => {
     findMarket();
     let toCoinAmount = "";
-    let toCoinWithSlippage = null;
 
     let impact = 0;
     let middleCoinAmount;
@@ -1159,10 +1161,11 @@ function Swap() {
     description: string;
   }) => {
     const walletAddress = wallet?.address;
-    commit("pushTx", { txid, description, walletAddress });
+    // commit("pushTx", { txid, description, walletAddress });
     // logger('Sub', txid)
+    const web3 = createWeb3Instance("https://rpc-mainnet-fork.dappio.xyz");
+    const conn = web3;
 
-    const conn = this.$web3;
     // const notify = this.$notify;
 
     const listenerId = conn.onSignature(
@@ -1172,13 +1175,12 @@ function Swap() {
 
         if (!signatureResult.err) {
           // success
-          commit("setTxStatus", {
-            txid,
-            status: "success",
-            block: slot,
-            walletAddress,
-          });
-
+          // commit("setTxStatus", {
+          //   txid,
+          //   status: "success",
+          //   block: slot,
+          //   walletAddress,
+          // });
           // notify.success({
           //   key: txid,
           //   message: 'Transaction has been confirmed',
@@ -1186,13 +1188,12 @@ function Swap() {
           // })
         } else {
           // fail
-          commit("setTxStatus", {
-            txid,
-            status: "fail",
-            block: slot,
-            walletAddress,
-          });
-
+          // commit("setTxStatus", {
+          //   txid,
+          //   status: "fail",
+          //   block: slot,
+          //   walletAddress,
+          // });
           // notify.error({
           //   key: txid,
           //   message: 'Transaction failed',
@@ -1247,6 +1248,279 @@ function Swap() {
       }
     }
     return 0;
+  };
+
+  const placeOrder = (loadingName: string) => {
+    const web3 = createWeb3Instance("https://rpc-mainnet-fork.dappio.xyz");
+    // this.swaping = true;
+    // if (loadingArr[loadingName] !== undefined) loadingArr[loadingName] = true;
+
+    // console.log(loadingArr,'loadingArr')
+
+    const key = getUnixTs().toString();
+    // $notify.info({
+    //   key,
+    //   message: "Making transaction...",
+    //   description: "",
+    //   duration: 0,
+    // });
+    let description = "Swap";
+
+    if (usedAmmId) {
+      const poolInfo = Object.values(infos).find(
+        (p: any) => p.ammId === usedAmmId
+      );
+      description = `Swap ${fromCoinAmount} ${fromCoin?.symbol} to ${toCoinAmount} ${toCoin?.symbol}`;
+
+      swap(
+        web3,
+        wallet,
+        poolInfo,
+        // @ts-ignore
+        fromCoin.mintAddress,
+        // @ts-ignore
+        toCoin.mintAddress,
+        get(
+          wallet.tokenAccounts,
+          // @ts-ignore
+          `${fromCoin.mintAddress}.tokenAccountAddress`
+        ),
+        // @ts-ignore
+        get(wallet.tokenAccounts, `${toCoin.mintAddress}.tokenAccountAddress`),
+        fromCoinAmount,
+        // @ts-ignore
+        // toCoinWithSlippage,
+        toCoinOutputBalance,
+        get(
+          wallet.tokenAccounts,
+          `${TOKENS.WSOL.mintAddress}.tokenAccountAddress`
+        )
+      )
+        .then((txid) => {
+          // $notify.info({
+          //   key,
+          //   message: "Transaction has been sent",
+          //   description: (h: any) =>
+          //     h("div", [
+          //       "Confirmation is in progress.  Check your transaction on ",
+          //       h(
+          //         "a",
+          //         {
+          //           attrs: {
+          //             href: `${url.explorer}/tx/${txid}`,
+          //             target: "_blank",
+          //           },
+          //         },
+          //         "here"
+          //       ),
+          //     ]),
+          // });
+          // sub({ txid, description });
+        })
+        .catch((error) => {
+          // $notify.error({
+          //   key,
+          //   message: "Swap failed",
+          //   description: error.message,
+          // });
+        })
+        .finally(() => {
+          // swaping = false;
+          // if (loadingArr[loadingName]) loadingArr[loadingName] = false;
+        });
+    } else if (needCreateTokens() || needWrapSol()) {
+      console.log(
+        fromCoin?.mintAddress,
+        usedRouteInfo?.middle_coin,
+        toCoin?.mintAddress
+      );
+      let fromMint = fromCoin?.mintAddress;
+      let midMint = usedRouteInfo?.middle_coin;
+      let toMint = toCoin?.mintAddress;
+      if (fromMint === NATIVE_SOL.mintAddress)
+        fromMint = TOKENS.WSOL.mintAddress;
+      if (midMint === NATIVE_SOL.mintAddress) midMint = TOKENS.WSOL.mintAddress;
+      if (toMint === NATIVE_SOL.mintAddress) toMint = TOKENS.WSOL.mintAddress;
+      description = `Create Tokens`;
+
+      preSwapRoute(
+        web3,
+        // @ts-ignore
+        wallet,
+        // @ts-ignore
+        fromCoin.mintAddress,
+        // @ts-ignore
+        get(wallet.tokenAccounts, `${fromMint}.tokenAccountAddress`),
+        // @ts-ignore
+        midMint,
+        get(wallet.tokenAccounts, `${midMint}.tokenAccountAddress`),
+        // @ts-ignore
+        toMint,
+        // @ts-ignore
+        get(wallet.tokenAccounts, `${toMint}.tokenAccountAddress`),
+        needWrapSol()
+      )
+        .then((txid: string) => {
+          // $notify.info({
+          //   key,
+          //   message: "Transaction has been sent",
+          //   description: (h: any) =>
+          //     h("div", [
+          //       "Confirmation is in progress.  Check your transaction on ",
+          //       h(
+          //         "a",
+          //         {
+          //           attrs: {
+          //             href: `${url.explorer}/tx/${txid}`,
+          //             target: "_blank",
+          //           },
+          //         },
+          //         "here"
+          //       ),
+          //     ]),
+          // });
+          // sub({ txid, description });
+        })
+        .catch((error: Error) => {
+          // $notify.error({
+          //   key,
+          //   message: "Create Tokens failed",
+          //   description: error.message,
+          // });
+        })
+        .finally(() => {
+          // swaping = false;
+          // if (loadingArr[loadingName]) loadingArr[loadingName] = false;
+        });
+    } else if (endpoint !== "Serum DEX" && usedRouteInfo !== undefined) {
+      const poolInfoA = Object.values(infos).find(
+        (p: any) => p.ammId === usedRouteInfo?.route[0].id
+      );
+      const poolInfoB = Object.values(infos).find(
+        (p: any) => p.ammId === usedRouteInfo?.route[1].id
+      );
+
+      let fromMint = fromCoin?.mintAddress;
+      let midMint = usedRouteInfo?.middle_coin;
+      let toMint = toCoin?.mintAddress;
+      if (fromMint === NATIVE_SOL.mintAddress)
+        fromMint = TOKENS.WSOL.mintAddress;
+      if (midMint === NATIVE_SOL.mintAddress) midMint = TOKENS.WSOL.mintAddress;
+      if (toMint === NATIVE_SOL.mintAddress) toMint = TOKENS.WSOL.mintAddress;
+      description = `Swap ${fromCoinAmount} ${fromCoin?.symbol} to ${toCoinAmount} ${toCoin?.symbol}`;
+
+      swapRoute(
+        web3,
+        // @ts-ignore
+        wallet,
+        poolInfoA,
+        poolInfoB,
+        usedRouteInfo,
+        // @ts-ignore
+        get(wallet.tokenAccounts, `${fromMint}.tokenAccountAddress`),
+        // @ts-ignore
+        get(wallet.tokenAccounts, `${midMint}.tokenAccountAddress`),
+        // @ts-ignore
+        get(wallet.tokenAccounts, `${toMint}.tokenAccountAddress`),
+        fromCoinAmount,
+        toCoinOutputBalance
+        // toCoinWithSlippage
+      )
+        .then((txid: string) => {
+          // $notify.info({
+          //   key,
+          //   message: "Transaction has been sent",
+          //   description: (h: any) =>
+          //     h("div", [
+          //       "Confirmation is in progress.  Check your transaction on ",
+          //       h(
+          //         "a",
+          //         {
+          //           attrs: {
+          //             href: `${url.explorer}/tx/${txid}`,
+          //             target: "_blank",
+          //           },
+          //         },
+          //         "here"
+          //       ),
+          //     ]),
+          // });
+
+          sub({ txid, description });
+        })
+        .catch((error: Error) => {
+          // $notify.error({
+          //   key,
+          //   message: "Swap failed",
+          //   description: error.message,
+          // });
+        })
+        .finally(() => {
+          // swaping = false;
+          // if (loadingArr[loadingName]) loadingArr[loadingName] = false;
+        });
+    } else {
+      if (
+        !fromCoin ||
+        !toCoin
+        // !market[showMarket] ||
+        // !market[showMarket].asks ||
+        // !market[showMarket].bids
+      )
+        return;
+      const marketConfig = market[showMarket];
+      description = `Swap ${fromCoinAmount} ${fromCoin?.symbol} to ${toCoinAmount} ${toCoin?.symbol}`;
+
+      place(
+        web3,
+        wallet,
+        marketConfig.market,
+        fromCoin.mintAddress,
+        toCoin.mintAddress,
+        get(
+          wallet.tokenAccounts,
+          `${fromCoin.mintAddress}.tokenAccountAddress`
+        ),
+        get(wallet.tokenAccounts, `${toCoin.mintAddress}.tokenAccountAddress`),
+        side,
+        fromCoinAmount,
+        toCoinWithSlippage,
+        worstPrice
+      )
+        .then((txid) => {
+          // $notify.info({
+          //   key,
+          //   message: "Transaction has been sent",
+          //   description: (h: any) =>
+          //     h("div", [
+          //       "Confirmation is in progress.  Check your transaction on ",
+          //       h(
+          //         "a",
+          //         {
+          //           attrs: {
+          //             href: `${url.explorer}/tx/${txid}`,
+          //             target: "_blank",
+          //           },
+          //         },
+          //         "here"
+          //       ),
+          //     ]),
+          // });
+
+          sub({ txid, description });
+        })
+        .catch((error) => {
+          // $notify.error({
+          //   key,
+          //   message: "Swap failed",
+          //   description: error.message,
+          // });
+        })
+        .finally(() => {
+          // swaping = false;
+          // if (loadingArr[loadingName]) loadingArr[loadingName] = false;
+        });
+    }
   };
 
   const handleChange = (event: any) => {
@@ -1644,6 +1918,9 @@ function Swap() {
                   _hover={{
                     bg: "transparent",
                     color: "#5ac4be",
+                  }}
+                  onClick={() => {
+                    placeOrder("swap");
                   }}
                 >
                   Swap
