@@ -52,14 +52,17 @@ const HeaderComponent = () => {
         : walletPublicKey;
     setAddress(keyToDisplay);
 
+    // new solanaWeb3.Connection(
+    //   "https://solana-api.projectserum.com",
+    //   "confirmed"
+    // )
     new solanaWeb3.Connection(
-      "https://solana-api.projectserum.com",
-      // solanaWeb3.clusterApiUrl("devnet"),
+      "https://rpc-mainnet-fork.dappio.xyz",
       "confirmed"
     )
       .getBalance(adapter.publicKey)
       .then(function (value) {
-        console.log(value);
+        console.log(value, "value");
       });
     triggerWalletModalFn(false);
     toast({
@@ -106,6 +109,7 @@ const HeaderComponent = () => {
         connectStatus: true,
       })
     );
+
     if (adapter) {
       adapter.on("connect", onConnect);
       if (!connectError) {
