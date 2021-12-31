@@ -41,15 +41,15 @@ export const wallets: { [key: string]: WalletInfo } = {
       return new PhantomWalletAdapter();
     },
   },
-  "Solflare Extension": {
-    name: "Solflare Extension",
-    website: "https://solflare.com",
-    firefoxUrl:
-      "https://addons.mozilla.org/en-US/firefox/addon/solflare-wallet",
-    getAdapter() {
-      return new SolflareWalletAdapter();
-    },
-  },
+  // "Solflare Extension": {
+  //   name: "Solflare Extension",
+  //   website: "https://solflare.com",
+  //   firefoxUrl:
+  //     "https://addons.mozilla.org/en-US/firefox/addon/solflare-wallet",
+  //   getAdapter() {
+  //     return new SolflareWalletAdapter();
+  //   },
+  // },
   "Sollet Web": {
     name: "Sollet Web",
     website: "https://www.sollet.io",

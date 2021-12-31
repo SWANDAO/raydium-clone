@@ -1,11 +1,11 @@
 import { cloneDeep } from "lodash-es";
 
-import { TokenAmount } from "../../utils/safe-math";
+import { TokenAmount } from "./safe-math";
 
 export interface TokenInfo {
   symbol: string;
   name: string;
-  uiAmount: number;
+
   mintAddress: string;
   decimals: number;
   totalSupply?: TokenAmount;
@@ -93,7 +93,6 @@ export const TOKENS_TAGS: {
 };
 
 export const NATIVE_SOL: TokenInfo = {
-  uiAmount: 0,
   symbol: "SOL",
   name: "Native Solana",
   mintAddress: "11111111111111111111111111111111",
@@ -2478,7 +2477,7 @@ function addUserLocalCoinMint() {
   }
 }
 
-export function addTokensSolana() {
+function addTokensSolana() {
   fetch("https://api.raydium.io/cache/solana-token-list")
     .then(async (response) => {
       addTokensSolanaFunc((await response.json()).tokens);
@@ -2554,16 +2553,16 @@ function addTokensSolanaFunc(tokens: any[]) {
   }
 }
 
-// function updateTokenTagsChange() {
-//   const userSelectSource = window.localStorage.userSelectSource ?? "";
-//   const userSelectSourceList: string[] = userSelectSource.split("---");
-//   for (const itemSource of userSelectSourceList) {
-//     if (TOKENS_TAGS[itemSource] && !TOKENS_TAGS[itemSource].mustShow) {
-//       TOKENS_TAGS[itemSource].show = true;
-//     }
-//   }
-// }
+function updateTokenTagsChange() {
+  const userSelectSource = window.localStorage.userSelectSource ?? "";
+  const userSelectSourceList: string[] = userSelectSource.split("---");
+  for (const itemSource of userSelectSourceList) {
+    if (TOKENS_TAGS[itemSource] && !TOKENS_TAGS[itemSource].mustShow) {
+      TOKENS_TAGS[itemSource].show = true;
+    }
+  }
+}
 
-// addUserLocalCoinMint()
-// addTokensSolana()
-// updateTokenTagsChange()
+addUserLocalCoinMint();
+addTokensSolana();
+updateTokenTagsChange();
