@@ -561,6 +561,14 @@ export async function swap(
     );
   }
 
+  console.log(
+    connection,
+    wallet,
+    transaction,
+    signers,
+    "connection, wallet, transaction, signers"
+  );
+
   return await sendTransaction(connection, wallet, transaction, signers);
 }
 
