@@ -80,7 +80,7 @@ import {
   AMM_INFO_LAYOUT_V4,
   getLpMintListDecimals,
 } from "../../utils/liquidity";
-// import logger from './logger'
+import logger from "../../utils/logger";
 // import { getAddressForWhat, LIQUIDITY_POOLS, LiquidityPoolInfo } from '../../utils/pools'
 // import { TokenAmount } from '@/utils/safe-math'
 // import { LP_TOKENS, NATIVE_SOL, TOKENS } from '../../utils/tokens'
@@ -90,9 +90,15 @@ import {
   getFilteredProgramAccountsAmmOrMarketCache,
   getMultipleAccounts,
   web3Config,
+  findAssociatedTokenAddress,
 } from "../../utils/web3";
 
-import { Connection, SignatureResult, Context } from "@solana/web3.js";
+import {
+  Connection,
+  SignatureResult,
+  Context,
+  ParsedAccountData,
+} from "@solana/web3.js";
 
 const RAY = getTokenBySymbol("RAY");
 
@@ -142,7 +148,9 @@ function Swap() {
   const { connector, balance } = useSelector((state: any) => {
     return state;
   });
+  const [tokenAccounts, setTokenAccounts] = useState({} as any);
   const { connectStatus, wallet } = connector;
+  const [finalUsedAmmId, setFinalUsedAmmId] = useState("" as String);
   const dispatch = useDispatch();
 
   const triggerWalletModalFn = (status: boolean) => {
@@ -404,6 +412,75 @@ function Swap() {
       commitment
     );
     return web3;
+  };
+
+  const getTokenAccount = () => {
+    const web3 = createWeb3Instance("https://rpc-mainnet-fork.dappio.xyz");
+    const conn = web3;
+
+    if (wallet) {
+      // commit('setLoading', true)
+
+      conn
+        .getParsedTokenAccountsByOwner(
+          wallet.publicKey,
+          {
+            programId: TOKEN_PROGRAM_ID,
+          },
+          "confirmed"
+        )
+        .then(async (parsedTokenAccounts) => {
+          const tokenAccounts: any = {};
+          const auxiliaryTokenAccounts: Array<{
+            pubkey: PublicKey;
+            account: AccountInfo<ParsedAccountData>;
+          }> = [];
+
+          for (const tokenAccountInfo of parsedTokenAccounts.value) {
+            const tokenAccountPubkey = tokenAccountInfo.pubkey;
+            const tokenAccountAddress = tokenAccountPubkey.toBase58();
+            const parsedInfo = tokenAccountInfo.account.data.parsed.info;
+            const mintAddress = parsedInfo.mint;
+            const balance = new TokenAmount(
+              parsedInfo.tokenAmount.amount,
+              parsedInfo.tokenAmount.decimals
+            );
+
+            const ata = await findAssociatedTokenAddress(
+              wallet.publicKey,
+              new PublicKey(mintAddress)
+            );
+
+            if (ata.equals(tokenAccountPubkey)) {
+              tokenAccounts[mintAddress] = {
+                tokenAccountAddress,
+                balance,
+              };
+            } else if (parsedInfo.tokenAmount.uiAmount > 0) {
+              auxiliaryTokenAccounts.push(tokenAccountInfo);
+            }
+          }
+
+          const solBalance = await conn.getBalance(
+            wallet.publicKey,
+            "confirmed"
+          );
+          tokenAccounts[NATIVE_SOL.mintAddress] = {
+            tokenAccountAddress: wallet.publicKey.toBase58(),
+            balance: new TokenAmount(solBalance, NATIVE_SOL.decimals),
+          };
+
+          // commit('setAuxiliaryTokenAccounts', auxiliaryTokenAccounts)
+          setTokenAccounts(tokenAccounts);
+          // commit('setTokenAccounts', tokenAccounts)
+          logger("Wallet TokenAccounts updated");
+        })
+        .catch()
+        .finally(() => {
+          // commit('setInitialized')
+          // commit('setLoading', false)
+        });
+    }
   };
 
   const findMarket = () => {
@@ -856,7 +933,7 @@ function Swap() {
     setInfos(liquidityPools);
 
     // commit('setInfos', liquidityPools)
-    // logger('Liquidity pool infomations updated')
+    logger("Liquidity pool infomations updated");
 
     // commit('setInitialized')
     // commit('setLoading', false)
@@ -886,8 +963,7 @@ function Swap() {
               fromCoin.mintAddress,
               toCoin.mintAddress,
               fromCoinBalance.toString(),
-              0
-              // setting.slippage
+              setting.slippage
             );
           // console.log(amountOutWithSlippage, "amountOutWithSlippage");
 
@@ -923,7 +999,7 @@ function Swap() {
       }
 
       const slippage = (Math.sqrt(1 + setting.slippage / 100) - 1) * 100;
-      // console.log("slippage", setting.slippage, slippage);
+      console.log("slippage", setting.slippage, slippage);
 
       // console.log(routeInfos, "routeInfos");
       if (routeInfos) {
@@ -954,7 +1030,6 @@ function Swap() {
               slippage
             );
 
-          console.log(amountOutWithSlippage, "amountOutWithSlippage");
           const fAmountOut = parseFloat(amountOut.fixed());
           if (fAmountOut > maxAmountOut) {
             toCoinAmount = amountOut.fixed();
@@ -983,10 +1058,10 @@ function Swap() {
                 },
               ],
             };
-            usedAmmId = undefined;
+            // usedAmmId = undefined;
             middleCoinAmount = amountOutWithSlippageA.fixed();
             endpoint = `${fromCoin.symbol} > ${middleCoint.symbol} > ${toCoin.symbol}`;
-            showMarket = undefined;
+            // showMarket = undefined;
           }
           console.log(
             "route -> ",
@@ -1007,8 +1082,9 @@ function Swap() {
         fromCoin &&
         toCoin &&
         market &&
-        fromCoinAmount &&
-        !asksAndBidsLoading
+        fromCoinAmount
+        // &&
+        // !asksAndBidsLoading
       ) {
         for (const [marketAddress, marketConfig] of Object.entries(market)) {
           if (!marketConfig.asks || !marketConfig.bids) continue;
@@ -1054,7 +1130,7 @@ function Swap() {
         }
       }
 
-      usedAmmId = usedAmmId;
+      // usedAmmId = usedAmmId;
       usedRouteInfo = usedRouteInfo;
       middleCoinAmount = middleCoinAmount;
 
@@ -1087,6 +1163,8 @@ function Swap() {
         outToPirceValue
       );
 
+      console.log(usedAmmId, "usedammid");
+
       setFinalImpact(impact);
 
       setToCoinOutputBalance(maxAmountOut);
@@ -1094,6 +1172,8 @@ function Swap() {
       setMiniReceived(toCoinWithSlippage);
 
       setCompareValue(outToPirceValue);
+
+      setFinalUsedAmmId(usedAmmId);
 
       // let setupFlag = setupFlag
       // let setupFlagWSOL = setupFlagWSOL
@@ -1144,7 +1224,7 @@ function Swap() {
         setMarkets(markets);
 
         // commit("setMarkets", markets);
-        // logger("Markets updated");
+        logger("Markets updated");
       })
       .catch();
   };
@@ -1162,7 +1242,7 @@ function Swap() {
   }) => {
     const walletAddress = wallet?.address;
     // commit("pushTx", { txid, description, walletAddress });
-    // logger('Sub', txid)
+    logger("Sub", txid);
     const web3 = createWeb3Instance("https://rpc-mainnet-fork.dappio.xyz");
     const conn = web3;
 
@@ -1172,8 +1252,10 @@ function Swap() {
       txid,
       function (signatureResult: SignatureResult, context: Context) {
         const { slot } = context;
+        console.log(signatureResult, "signatureResult");
 
         if (!signatureResult.err) {
+          console.log("success");
           // success
           // commit("setTxStatus", {
           //   txid,
@@ -1187,6 +1269,7 @@ function Swap() {
           //   description
           // })
         } else {
+          console.log("fail");
           // fail
           // commit("setTxStatus", {
           //   txid,
@@ -1265,13 +1348,33 @@ function Swap() {
     //   duration: 0,
     // });
     let description = "Swap";
-
-    if (usedAmmId) {
+    console.log(finalUsedAmmId, "finalUsedAmmId");
+    if (finalUsedAmmId) {
       const poolInfo = Object.values(infos).find(
-        (p: any) => p.ammId === usedAmmId
+        (p: any) => p.ammId === finalUsedAmmId
       );
       description = `Swap ${fromCoinAmount} ${fromCoin?.symbol} to ${toCoinAmount} ${toCoin?.symbol}`;
-
+      // '4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R' 'CsZ5LZkDS7h9TDKjrbL7VAwQZ9nsRu8vJLhRYfmGaN8K'
+      // '6nvKZW14CqR7pW6pNJWSrvrNiZumazLTDK8mEJiR5jSA' 'FLZ9fwJMqR64AqJvdWJqiRF3iCtj9TLZ9PpVjSRqZH3u'
+      // '9.540519' '154.434077' undefined 'final'
+      console.log(
+        tokenAccounts,
+        web3,
+        wallet,
+        poolInfo,
+        // @ts-ignore
+        fromCoin.mintAddress,
+        // @ts-ignore
+        toCoin.mintAddress,
+        "6nvKZW14CqR7pW6pNJWSrvrNiZumazLTDK8mEJiR5jSA",
+        // @ts-ignore
+        "FLZ9fwJMqR64AqJvdWJqiRF3iCtj9TLZ9PpVjSRqZH3u",
+        fromCoinAmount.toString(),
+        // @ts-ignore
+        miniReceived.toString(),
+        get(tokenAccounts, `${TOKENS.WSOL.mintAddress}.tokenAccountAddress`),
+        "finalomg"
+      );
       swap(
         web3,
         wallet,
@@ -1280,23 +1383,17 @@ function Swap() {
         fromCoin.mintAddress,
         // @ts-ignore
         toCoin.mintAddress,
-        get(
-          wallet.tokenAccounts,
-          // @ts-ignore
-          `${fromCoin.mintAddress}.tokenAccountAddress`
-        ),
+        "6nvKZW14CqR7pW6pNJWSrvrNiZumazLTDK8mEJiR5jSA",
         // @ts-ignore
-        get(wallet.tokenAccounts, `${toCoin.mintAddress}.tokenAccountAddress`),
-        fromCoinAmount,
+        "FLZ9fwJMqR64AqJvdWJqiRF3iCtj9TLZ9PpVjSRqZH3u",
+        fromCoinAmount.toString(),
         // @ts-ignore
-        // toCoinWithSlippage,
-        toCoinOutputBalance,
-        get(
-          wallet.tokenAccounts,
-          `${TOKENS.WSOL.mintAddress}.tokenAccountAddress`
-        )
+        miniReceived.toString(),
+        get(tokenAccounts, `${TOKENS.WSOL.mintAddress}.tokenAccountAddress`)
       )
         .then((txid) => {
+          console.log(txid, "txid");
+
           // $notify.info({
           //   key,
           //   message: "Transaction has been sent",
@@ -1315,9 +1412,10 @@ function Swap() {
           //       ),
           //     ]),
           // });
-          // sub({ txid, description });
+          sub({ txid, description });
         })
         .catch((error) => {
+          console.log(error, "error");
           // $notify.error({
           //   key,
           //   message: "Swap failed",
@@ -1361,6 +1459,7 @@ function Swap() {
         needWrapSol()
       )
         .then((txid: string) => {
+          console.log(txid, "txid2");
           // $notify.info({
           //   key,
           //   message: "Transaction has been sent",
@@ -1427,6 +1526,7 @@ function Swap() {
         // toCoinWithSlippage
       )
         .then((txid: string) => {
+          console.log(txid, "txid3");
           // $notify.info({
           //   key,
           //   message: "Transaction has been sent",
@@ -1462,12 +1562,13 @@ function Swap() {
     } else {
       if (
         !fromCoin ||
-        !toCoin
-        // !market[showMarket] ||
-        // !market[showMarket].asks ||
-        // !market[showMarket].bids
+        !toCoin ||
+        !market[showMarket] ||
+        !market[showMarket].asks ||
+        !market[showMarket].bids
       )
         return;
+      console.log(market, "showmarket");
       const marketConfig = market[showMarket];
       description = `Swap ${fromCoinAmount} ${fromCoin?.symbol} to ${toCoinAmount} ${toCoin?.symbol}`;
 
@@ -1920,6 +2021,7 @@ function Swap() {
                     color: "#5ac4be",
                   }}
                   onClick={() => {
+                    getTokenAccount();
                     placeOrder("swap");
                   }}
                 >
